@@ -52,6 +52,13 @@ HANDLE_RE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 
+# 翻訳: Google 翻訳の公開の窓口を使う（キーもログインも要らない）。日本語以外の投稿を日本語にする
+TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t"
+NO_TRANSLATE_LANGS = {"ja", "zxx", "art", "und"}  # q で始まるもの（qme など）も X の特別な印なので訳さない
+TRANSLATE_BACKLOG_DAYS = 7     # 自動で訳すのは、取得してからこの日数以内の投稿だけ
+TRANSLATE_PAUSE_SEC = 0.6      # 1件ごとに空ける間
+TRANSLATE_BACKOFF_SEC = 600    # 失敗したら、この秒数は自動の翻訳を休む
+
 log = logging.getLogger("xwatch")
 
 
@@ -278,6 +285,47 @@ def fetch_account(handle: str) -> tuple[dict, list[dict]]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 翻訳
+# ──────────────────────────────────────────────────────────────────────────────
+class TranslateError(Exception):
+    pass
+
+
+def needs_translation(lang) -> bool:
+    return bool(lang) and lang not in NO_TRANSLATE_LANGS and not lang.startswith("q")
+
+
+def text_key(text: str) -> str:
+    """訳したときの原文の印。投稿が書き換わったら訳を使わないために使う。"""
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def translate_to_ja(text: str) -> str:
+    if not text.strip():
+        return ""
+    data = urllib.parse.urlencode({"q": text}).encode()
+    req = urllib.request.Request(TRANSLATE_URL, data=data, headers={
+        "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            body = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise TranslateError(f"翻訳できませんでした（HTTP {e.code}）") from e
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        raise TranslateError(f"翻訳できませんでした（{e}）") from e
+    try:
+        return "".join(seg[0] for seg in (body[0] or []) if seg and seg[0])
+    except (TypeError, IndexError) as e:
+        raise TranslateError("翻訳の返事を読めませんでした") from e
+
+
+def translation_jobs(post: dict) -> list[tuple[str, str]]:
+    """投稿とその引用のうち、訳すものを (ID, 本文) で返す。"""
+    return [(t["id"], t.get("text") or "") for t in (post, post.get("quoted"))
+            if t and t.get("id") and needs_translation(t.get("lang"))]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 保存
 # ──────────────────────────────────────────────────────────────────────────────
 SCHEMA = """
@@ -306,6 +354,12 @@ CREATE TABLE IF NOT EXISTS posts (
 CREATE INDEX IF NOT EXISTS posts_handle_time ON posts(handle, created_at DESC);
 CREATE INDEX IF NOT EXISTS posts_time ON posts(created_at DESC);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS translations (
+  id          TEXT PRIMARY KEY,
+  src         TEXT NOT NULL,
+  ja          TEXT NOT NULL,
+  at          INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   started_at INTEGER, finished_at INTEGER, trigger TEXT,
@@ -417,8 +471,10 @@ class Store:
         if handle:
             sql.append("AND handle=?"); args.append(handle)
         if q:
-            sql.append("AND text LIKE ? ESCAPE '\\'")
-            args.append("%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+            like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            # 訳した文でも見つかるようにする
+            sql.append("AND (text LIKE ? ESCAPE '\\' OR id IN (SELECT id FROM translations WHERE ja LIKE ? ESCAPE '\\'))")
+            args += [like, like]
         if unread:
             sql.append("AND is_read=0")
         if starred:
@@ -428,7 +484,7 @@ class Store:
         sql.append("ORDER BY CAST(id AS INTEGER) DESC LIMIT ?"); args.append(limit)
         with self._lock:
             rows = self.db.execute(" ".join(sql), args).fetchall()
-        return [self._row_to_post(r) for r in rows]
+        return self.attach_translations([self._row_to_post(r) for r in rows])
 
     def _row_to_post(self, r) -> dict:
         d = json.loads(r["data"])
@@ -439,7 +495,55 @@ class Store:
     def post(self, pid: str) -> dict | None:
         with self._lock:
             r = self.db.execute("SELECT * FROM posts WHERE id=?", (pid,)).fetchone()
-        return self._row_to_post(r) if r else None
+        return self.attach_translations([self._row_to_post(r)])[0] if r else None
+
+    # translations
+    def attach_translations(self, posts: list[dict]) -> list[dict]:
+        """投稿と引用に、原文が変わっていない訳を "ja" として付ける。"""
+        targets = [t for p in posts for t in (p, p.get("quoted")) if t and t.get("id")]
+        ids = list({t["id"] for t in targets})
+        found = {}
+        with self._lock:
+            for i in range(0, len(ids), 500):
+                chunk = ids[i:i + 500]
+                marks = ",".join("?" * len(chunk))
+                for r in self.db.execute(f"SELECT id, src, ja FROM translations WHERE id IN ({marks})", chunk):
+                    found[r["id"]] = (r["src"], r["ja"])
+        for t in targets:
+            src, ja = found.get(t["id"], (None, ""))
+            if ja and src == text_key(t.get("text") or ""):
+                t["ja"] = ja
+        return posts
+
+    def save_translation(self, pid: str, text: str, ja: str) -> None:
+        with self._lock:
+            self.db.execute("INSERT INTO translations(id, src, ja, at) VALUES(?,?,?,?) "
+                            "ON CONFLICT(id) DO UPDATE SET src=excluded.src, ja=excluded.ja, at=excluded.at",
+                            (pid, text_key(text), ja, int(time.time())))
+            self.db.commit()
+
+    def untranslated(self, seen_after: int, limit: int) -> list[tuple[str, str]]:
+        """取得が seen_after 以降で、まだ訳していない投稿と引用を (ID, 本文) で新しい順に。"""
+        skip = ",".join(f"'{x}'" for x in sorted(NO_TRANSLATE_LANGS))
+
+        def missing(lang_path: str, id_expr: str) -> str:
+            lang = f"json_extract(data,'{lang_path}')"
+            return (f"({lang} IS NOT NULL AND {lang} NOT IN ({skip}) AND substr({lang},1,1) <> 'q' "
+                    f"AND NOT EXISTS (SELECT 1 FROM translations t WHERE t.id = {id_expr}))")
+        sql = ("SELECT data FROM posts WHERE first_seen >= ? AND ("
+               + missing("$.lang", "posts.id") + " OR "
+               + missing("$.quoted.lang", "json_extract(posts.data,'$.quoted.id')")
+               + ") ORDER BY first_seen DESC, CAST(id AS INTEGER) DESC LIMIT ?")
+        jobs, seen = [], set()
+        with self._lock:
+            for r in self.db.execute(sql, (seen_after, limit)).fetchall():
+                for pid, text in translation_jobs(json.loads(r["data"])):
+                    if pid in seen:
+                        continue
+                    seen.add(pid)
+                    if not self.db.execute("SELECT 1 FROM translations WHERE id=?", (pid,)).fetchone():
+                        jobs.append((pid, text))
+        return jobs
 
     def new_posts(self, after_rowid: int, handle: str | None, limit: int) -> tuple[list[dict], int, int]:
         """保存順（rowid）で after_rowid より後の投稿を古い順に limit 件。(posts, 最後のrowid, 残り件数)"""
@@ -501,10 +605,81 @@ class Store:
 # ──────────────────────────────────────────────────────────────────────────────
 # スケジューラ
 # ──────────────────────────────────────────────────────────────────────────────
-class Scheduler(threading.Thread):
+class Translator(threading.Thread):
+    """日本語以外の投稿を、裏で少しずつ日本語に訳して保存する。"""
+    BATCH = 10   # 裏の翻訳は少しずつ区切って、巡回の直後の翻訳を長く待たせない
+
     def __init__(self, store: Store):
+        super().__init__(daemon=True, name="xwatch-translator")
+        self.store = store
+        self._wake = threading.Event()
+        self._stop_event = threading.Event()
+        self._lock = threading.Lock()   # 巡回の直後の翻訳と裏の翻訳が重ならないように
+        self.resume_at = 0.0            # 失敗したあと、この時刻までは自動で訳さない
+        self.last_error: str | None = None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.store.get("translate", True))
+
+    def wake(self) -> None:
+        self._wake.set()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._wake.set()
+
+    def translate_post(self, pid: str) -> dict | None:
+        """1件をすぐに訳す（ダッシュボードの「翻訳する」から）。失敗したら TranslateError。"""
+        p = self.store.post(pid)
+        if not p:
+            return None
+        for tid, text in translation_jobs(p):
+            self.store.save_translation(tid, text, translate_to_ja(text))
+        return self.store.post(pid)
+
+    def catch_up(self, seen_after: int, limit: int | None = None) -> int:
+        """seen_after 以降に取得した投稿のうち、まだ訳していないものを訳す。訳した件数を返す。"""
+        if not self.enabled or time.time() < self.resume_at:
+            return 0
+        n = 0
+        with self._lock:
+            jobs = self.store.untranslated(seen_after, limit or self.BATCH)
+            for pid, text in jobs:
+                if self._stop_event.is_set():
+                    break
+                try:
+                    self.store.save_translation(pid, text, translate_to_ja(text))
+                    n += 1
+                    self.last_error = None
+                except TranslateError as e:
+                    self.last_error = str(e)
+                    self.resume_at = time.time() + TRANSLATE_BACKOFF_SEC
+                    log.warning("%s。%d分後にもう一度試します", e, TRANSLATE_BACKOFF_SEC // 60)
+                    break
+                self._stop_event.wait(TRANSLATE_PAUSE_SEC)
+        return n
+
+    def run(self) -> None:
+        while not self._stop_event.is_set():
+            n = 0
+            try:
+                n = self.catch_up(int(time.time()) - TRANSLATE_BACKLOG_DAYS * 86400)
+            except Exception:
+                log.exception("翻訳")
+            if n:
+                log.info("翻訳: %d件", n)
+            # 訳すものが残っていれば続け、なくなったら（または失敗して休むときは）次の巡回か5分後まで待つ
+            if n == 0 or time.time() < self.resume_at:
+                self._wake.wait(300)
+                self._wake.clear()
+
+
+class Scheduler(threading.Thread):
+    def __init__(self, store: Store, translator: "Translator | None" = None):
         super().__init__(daemon=True, name="xwatch-scheduler")
         self.store = store
+        self.translator = translator
         self._wake = threading.Event()
         self._stop_event = threading.Event()
         self._manual: list[str | None] = []   # None = 全件, str = 1アカウント
@@ -626,6 +801,14 @@ class Scheduler(threading.Thread):
                         break
                     if offset + FETCH_WORKERS < len(eligible):
                         self._stop_event.wait(random.uniform(2.5, 6.0))
+            # 今回の新着を、巡回が終わったと表示する前に訳しておく（ダッシュボードに訳つきで出すため）
+            if self.translator and new_total:
+                self.current = None
+                try:
+                    self.translator.catch_up(started, limit=200)
+                except Exception:
+                    log.exception("巡回の直後の翻訳")
+                self.translator.wake()
         finally:
             self.running = False
             self.current = None
@@ -1199,6 +1382,7 @@ class Handler(BaseHTTPRequestHandler):
     server_version = f"xwatch/{__version__}"
     store: Store
     sched: Scheduler
+    translator: Translator
     images: "ImageCache"
     mcp: "MCPServer"
     data_dir: Path = DEFAULT_DATA_DIR
@@ -1261,6 +1445,7 @@ class Handler(BaseHTTPRequestHandler):
                     "accounts": self.store.accounts(),
                     "stats": self.store.stats(),
                     "events": [e for e in self.sched.events if e["seq"] > since],
+                    "translate": self.translator.enabled,
                     "limits": {"min_interval": MIN_INTERVAL_MIN, "max_interval": MAX_INTERVAL_MIN,
                                "max_accounts": MAX_ACCOUNTS},
                     "now": time.time(),
@@ -1380,6 +1565,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.store.set("interval_min", v)
                 if "paused" in body:
                     self.store.set("paused", bool(body["paused"]))
+                if "translate" in body:
+                    self.store.set("translate", bool(body["translate"]))
+                    self.translator.resume_at = 0.0
+                    self.translator.wake()
                 self.sched.reconfigure()
                 return self._json({"ok": True, "scheduler": self.sched.state()})
             if u.path == "/api/fetch":
@@ -1391,6 +1580,17 @@ class Handler(BaseHTTPRequestHandler):
                 h = body.get("handle")
                 n = self.store.mark_read(normalize_handle(h) if h else None, ids or None)
                 return self._json({"ok": True, "count": n})
+            if u.path == "/api/translate":
+                pid = str(body.get("id", ""))
+                if not pid.isdigit():
+                    return self._error("invalid id")
+                try:
+                    p = self.translator.translate_post(pid)
+                except TranslateError as e:
+                    return self._error(str(e), 502)
+                if not p:
+                    return self._error("not found", 404)
+                return self._json({"ok": True, "post": p})
             if u.path == "/api/star":
                 pid = str(body.get("id", ""))
                 if not pid.isdigit():
@@ -1474,8 +1674,9 @@ def main(argv=None) -> int:
     if args.once:
         return run_once(store)
 
-    sched = Scheduler(store)
-    Handler.store, Handler.sched = store, sched
+    translator = Translator(store)
+    sched = Scheduler(store, translator)
+    Handler.store, Handler.sched, Handler.translator = store, sched, translator
     Handler.images = ImageCache(data_dir / "cache")
     Handler.mcp = MCPServer(store, sched)
     Handler.data_dir = data_dir
@@ -1487,6 +1688,7 @@ def main(argv=None) -> int:
         return 2
     httpd.daemon_threads = True
     sched.start()
+    translator.start()
 
     url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '') else args.host}:{args.port}/"
     log.info("xwatch %s 起動: %s  （Ctrl+C で終了）", __version__, url)
@@ -1500,6 +1702,7 @@ def main(argv=None) -> int:
         log.info("終了します")
     finally:
         sched.stop()
+        translator.stop()
         httpd.server_close()
     return 0
 

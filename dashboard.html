@@ -155,6 +155,10 @@ svg{flex:none}
 .p-text{margin:12px 0 0;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;font-size:15px;line-height:1.7}
 .p-text a{color:var(--link)}
 .p-text a:hover{text-decoration:underline}
+.p-tr{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text3)}
+.p-tr button{border:0;background:none;padding:2px 0;color:var(--link);font:inherit;cursor:pointer}
+.p-tr button:hover{text-decoration:underline}
+.p-tr button:disabled{color:var(--text3);cursor:default;text-decoration:none}
 .media{display:grid;gap:4px;margin-top:12px;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
 .media.n1{grid-template-columns:1fr}
 .media.n2{grid-template-columns:1fr 1fr;aspect-ratio:16/9}
@@ -347,6 +351,10 @@ dialog::backdrop{background:rgba(5,6,9,.6);backdrop-filter:blur(4px)}
       <input type="checkbox" class="tgl" id="notify-toggle" onchange="UI.setNotify(this.checked)">
     </div>
     <div class="group switch">
+      <div><h3>日本語に翻訳</h3><p style="margin:0">英語や中国語など、日本語以外の投稿を Google 翻訳で日本語にして表示します。「原文を表示」で元の文に戻せます。</p></div>
+      <input type="checkbox" class="tgl" id="translate-toggle" onchange="UI.setTranslate(this.checked)">
+    </div>
+    <div class="group switch">
       <div><h3>表示したら既読</h3><p style="margin:0">画面に1秒以上表示された投稿を自動で既読にします。</p></div>
       <input type="checkbox" class="tgl" id="autoread-toggle" onchange="UI.setPref('autoread',this.checked)">
     </div>
@@ -457,7 +465,10 @@ const ICON = {
 /* ───────────── state ───────────── */
 const prefs = Object.assign({theme: matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark", autoread: true, notify: false},
   JSON.parse(localStorage.getItem("xwatch.prefs") || "{}"));
-const S = { view: null, filter: "all", q: "", posts: [], loading: false, end: false, state: null, eventSeq: null, timer: null, pending: new Set(), shown: new Set() };
+const S = { view: null, filter: "all", q: "", posts: [], loading: false, end: false, state: null, eventSeq: null, timer: null, pending: new Set(), shown: new Set(), orig: new Set() };
+// 翻訳: 日本語以外の投稿は、訳（Google 翻訳）を本文として出し、原文に切り替えられるようにする
+const canTranslate = lang => !!lang && !["ja", "zxx", "art", "und"].includes(lang) && !lang.startsWith("q");
+const langName = lang => { try { return new Intl.DisplayNames(["ja"], {type: "language"}).of(lang); } catch { return lang; } };
 
 /* ───────────── UI ───────────── */
 const UI = {
@@ -683,7 +694,7 @@ const UI = {
     const q = p.quoted;
     const quote = q ? `<div class="quote" role="link" tabindex="0" data-href="${esc(safeUrl(q.permalink))}">
         <div class="p-head">${avatar(q.author?.avatar)}<div class="p-who"><div class="p-name"><span>${esc(q.author?.name)}</span>${q.author?.verified ? ICON.verified : ""}<span style="font-weight:400;color:var(--text3)">@${esc(q.author?.screen_name)} · ${rel(q.created_at)}</span></div></div></div>
-        ${q.text ? `<div class="p-text">${esc(q.text)}</div>` : ""}${this.mediaHTML(q.media, q.permalink, true)}</div>` : "";
+        ${q.text ? `<div class="p-text">${esc(S.state?.translate !== false && q.ja ? q.ja : q.text)}</div>` : ""}${this.mediaHTML(q.media, q.permalink, true)}</div>` : "";
     const fresh = !S.shown.has(p.id); S.shown.add(p.id);
     return `<article class="post ${p.is_read ? "" : "unread"} ${fresh ? "fresh" : ""}" data-id="${esc(p.id)}">
       <div class="p-head">
@@ -694,7 +705,7 @@ const UI = {
         </div>
         ${p.pinned ? `<span class="badge pin">固定</span>` : ""}${p.is_read ? "" : `<span class="badge">NEW</span>`}
       </div>
-      ${p.text ? `<div class="p-text">${linkify(p.text)}</div>` : ""}
+      <div class="p-body">${this.bodyHTML(p)}</div>
       ${this.mediaHTML(p.media, p.permalink)}${quote}
       <div class="p-foot">
         ${metric(ICON.reply, c.replies, "返信")}${metric(ICON.repost, (c.reposts ?? 0) + (c.quotes ?? 0), "リポスト+引用")}${metric(ICON.like, c.likes, "いいね")}${metric(ICON.views, c.views, "表示")}
@@ -702,6 +713,36 @@ const UI = {
         <button class="act ${p.starred ? "on" : ""}" title="スター" onclick="UI.star('${esc(p.id)}', this)">${p.starred ? ICON.starOn : ICON.star}</button>
         <a class="act" href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener noreferrer" title="Xで開く" onclick="UI.autoRead('${esc(p.id)}')">${ICON.ext}</a>
       </div></article>`;
+  },
+
+  bodyHTML(p){
+    if (!p.text) return "";
+    const on = S.state?.translate !== false && canTranslate(p.lang);
+    if (!on) return `<div class="p-text">${linkify(p.text)}</div>`;
+    if (!p.ja) return `<div class="p-text">${linkify(p.text)}</div>
+      <div class="p-tr"><button onclick="UI.translate('${esc(p.id)}', this)">翻訳する</button></div>`;
+    const orig = S.orig.has(p.id);
+    return `<div class="p-text">${linkify(orig ? p.text : p.ja)}</div>
+      <div class="p-tr"><span>${orig ? "原文" : `${esc(langName(p.lang))}から翻訳（Google 翻訳）`}</span><span>·</span><button onclick="UI.toggleOrig('${esc(p.id)}')">${orig ? "翻訳を表示" : "原文を表示"}</button></div>`;
+  },
+  redrawBody(p){
+    const node = document.querySelector(`.post[data-id="${CSS.escape(p.id)}"] .p-body`);
+    if (node) node.innerHTML = this.bodyHTML(p);
+  },
+  toggleOrig(id){
+    const p = S.posts.find(x => x.id === id); if (!p) return;
+    S.orig.has(id) ? S.orig.delete(id) : S.orig.add(id);
+    this.redrawBody(p);
+  },
+  async translate(id, btn){
+    const p = S.posts.find(x => x.id === id); if (!p) return;
+    btn.disabled = true; btn.textContent = "翻訳しています…";
+    try {
+      const r = await api("/api/translate", {id});
+      Object.assign(p, {ja: r.post.ja, quoted: r.post.quoted});
+      if (!p.ja) throw new Error("訳を取得できませんでした");
+      S.orig.delete(id); this.redrawBody(p);
+    } catch (e) { btn.disabled = false; btn.textContent = "翻訳する"; this.toast(null, "翻訳できませんでした", e.message, true); }
   },
 
   /* actions */
@@ -745,6 +786,7 @@ const UI = {
     $("#auto-toggle").checked = !st.scheduler.paused;
     $("#notify-toggle").checked = prefs.notify && ("Notification" in window) && Notification.permission === "granted";
     $("#autoread-toggle").checked = prefs.autoread;
+    $("#translate-toggle").checked = st.translate !== false;
     this.applyTheme();
     $("#manage-list").innerHTML = st.accounts.length ? st.accounts.map(a => `<div class="mrow">${avatar(a.profile?.avatar)}
       <div class="acct-meta"><div class="acct-name">${esc(a.profile?.name || a.handle)}</div><div class="acct-handle">@${esc(a.handle)} · ${a.total}件保存</div></div>
@@ -779,6 +821,10 @@ const UI = {
     if (!Number.isFinite(m)) return;
     try { await api("/api/settings", {interval_min: Math.round(m)}); await this.poll(); this.syncSettings(); this.toast(null, "巡回間隔を変更しました", `${Math.round(m)}分ごとに取得します`); }
     catch (e) { this.toast(null, "変更できませんでした", e.message, true); }
+  },
+  async setTranslate(on){
+    try { await api("/api/settings", {translate: on}); await this.poll(); this.syncSettings(); this.renderFeed(); }
+    catch (e) { this.toast(null, "失敗しました", e.message, true); }
   },
   async setPaused(p){ try { await api("/api/settings", {paused: p}); await this.poll(); this.syncSettings(); } catch (e) { this.toast(null, "失敗しました", e.message, true); } },
   async setNotify(on){
