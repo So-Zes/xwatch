@@ -1,0 +1,817 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0a0c10">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(console.error)); }</script>
+<title>xwatch</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230b0d12'/%3E%3Ccircle cx='32' cy='32' r='15' fill='none' stroke='%23e8b86d' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='5' fill='%23e8b86d'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0a0c10; --bg2:#0f1218; --panel:#12161d; --card:#141921; --card-h:#181e27;
+  --line:#222a35; --line2:#2b3542; --text:#e9edf3; --text2:#a7b0bd; --text3:#6f7a89;
+  --accent:#e8b86d; --accent-2:#f3d39c; --accent-ink:#1a1306;
+  --ok:#5fd39a; --warn:#f0b54a; --bad:#ef6b6b; --link:#8ab4ff;
+  --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 10px 30px -12px rgba(0,0,0,.6);
+  --r:16px; --r-sm:10px;
+  --font:"Inter","SF Pro Text","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:"JetBrains Mono","SF Mono","Cascadia Code",ui-monospace,Menlo,Consolas,monospace;
+}
+:root[data-theme="light"]{
+  --bg:#f5f3ef; --bg2:#efece6; --panel:#fbfaf7; --card:#ffffff; --card-h:#fdfcfa;
+  --line:#e6e1d8; --line2:#d9d2c6; --text:#1b1d22; --text2:#555c68; --text3:#8a919c;
+  --accent:#b9782a; --accent-2:#8f5a1a; --accent-ink:#fff8ec;
+  --ok:#1f9d63; --warn:#c98a12; --bad:#d64545; --link:#2a5bd7;
+  --shadow:0 1px 2px rgba(30,25,15,.05), 0 8px 24px -14px rgba(30,25,15,.25);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14.5px/1.6 var(--font);-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(1200px 600px at 85% -10%, color-mix(in oklab, var(--accent) 9%, transparent), transparent 60%),
+                   radial-gradient(900px 500px at -10% 110%, color-mix(in oklab, var(--link) 6%, transparent), transparent 60%);
+  background-attachment:fixed}
+a{color:inherit;text-decoration:none}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+::selection{background:color-mix(in oklab,var(--accent) 40%,transparent)}
+[hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ── layout ── */
+.app{display:grid;grid-template-columns:288px minmax(0,1fr) 320px;min-height:100vh}
+@media (max-width:1280px){.app{grid-template-columns:272px minmax(0,1fr)} .aside{display:none}}
+.scrim{display:none}
+@media (max-width:860px){.app.drawer .scrim{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:30}}
+
+/* ── sidebar ── */
+.side{background:color-mix(in oklab,var(--panel) 92%,transparent);border-right:1px solid var(--line);display:flex;flex-direction:column;height:100vh;position:sticky;top:0;backdrop-filter:blur(12px)}
+.brand{display:flex;align-items:center;gap:12px;padding:22px 20px 18px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(145deg,#1a1f29,#0b0d12);display:grid;place-items:center;box-shadow:0 0 0 1px var(--line2) inset}
+:root[data-theme="light"] .brand-mark{background:linear-gradient(145deg,#24211c,#0f0e0c)}
+.brand-name{font-weight:700;letter-spacing:.02em;font-size:17px}
+.brand-sub{font-size:11.5px;color:var(--text3);letter-spacing:.04em}
+.nav{padding:4px 10px}
+.nav-item{display:flex;align-items:center;gap:12px;width:100%;padding:9px 12px;border-radius:11px;border:0;background:none;text-align:left;color:var(--text2);transition:background .15s,color .15s}
+.nav-item:hover{background:color-mix(in oklab,var(--text) 5%,transparent);color:var(--text)}
+.nav-item.active{background:color-mix(in oklab,var(--accent) 13%,transparent);color:var(--text)}
+.nav-item .ico{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:color-mix(in oklab,var(--text) 6%,transparent);flex:none}
+.nav-item.active .ico{background:var(--accent);color:var(--accent-ink)}
+.nav-item .lbl{flex:1;min-width:0;font-weight:600;font-size:14px}
+.pill{min-width:22px;height:20px;padding:0 7px;border-radius:999px;font-size:11.5px;font-weight:700;display:inline-grid;place-items:center;background:var(--accent);color:var(--accent-ink);font-variant-numeric:tabular-nums}
+.pill.dim{background:color-mix(in oklab,var(--text) 9%,transparent);color:var(--text3)}
+.sec-h{display:flex;align-items:center;justify-content:space-between;padding:18px 22px 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);font-weight:700}
+.accts{flex:1;overflow:auto;padding:2px 10px 10px;scrollbar-width:thin}
+.acct{display:flex;align-items:center;gap:11px;width:100%;padding:8px 10px;border-radius:12px;border:0;background:none;text-align:left;transition:background .15s;position:relative}
+.acct:hover{background:color-mix(in oklab,var(--text) 5%,transparent)}
+.acct.active{background:color-mix(in oklab,var(--accent) 13%,transparent)}
+.acct.off{opacity:.45}
+.av{width:36px;height:36px;border-radius:50%;object-fit:cover;background:var(--line);flex:none}
+.av-wrap{position:relative;flex:none}
+.dot{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;border:2px solid var(--panel);background:var(--text3)}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+.dot.spin{background:var(--accent);animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(1.35);opacity:.6}}
+.acct-meta{flex:1;min-width:0}
+.acct-name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-handle{font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.add{padding:12px 14px 16px;border-top:1px solid var(--line)}
+.add form{display:flex;gap:8px}
+.field{flex:1;min-width:0;height:40px;border-radius:11px;border:1px solid var(--line2);background:var(--bg2);padding:0 12px;outline:none;transition:border-color .15s, box-shadow .15s}
+.field:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--accent) 22%,transparent)}
+.add .hint{font-size:11.5px;color:var(--text3);margin-top:8px;line-height:1.5}
+.empty-side{padding:18px 14px;color:var(--text3);font-size:13px;line-height:1.7}
+
+/* ── buttons ── */
+.btn{height:38px;padding:0 14px;border-radius:11px;border:1px solid var(--line2);background:var(--card);display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;white-space:nowrap;transition:background .15s,border-color .15s,transform .05s}
+.btn:hover{background:var(--card-h);border-color:color-mix(in oklab,var(--text) 22%,var(--line2))}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--accent);border-color:transparent;color:var(--accent-ink)}
+.btn.primary:hover{background:var(--accent-2)}
+.btn.ghost{background:none;border-color:transparent}
+.btn.ghost:hover{background:color-mix(in oklab,var(--text) 6%,transparent)}
+.btn.icon{width:38px;padding:0;justify-content:center}
+.btn.danger{color:var(--bad)}
+.snip{margin-top:12px}
+.snip-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:12.5px;font-weight:600;color:var(--text2)}
+.snip-h .btn{height:28px;padding:0 10px;font-size:12px;border-radius:9px}
+.snip pre{margin:0;padding:11px 13px;border-radius:12px;background:var(--bg2);border:1px solid var(--line);font:12px/1.55 var(--mono);color:var(--text);white-space:pre-wrap;word-break:break-all;max-height:340px;overflow:auto}
+.ai-tabs{margin-top:4px;flex-wrap:wrap;max-width:100%}
+.btn[disabled]{opacity:.5;pointer-events:none}
+.menu-btn{display:none!important}
+svg{flex:none}
+
+/* ── main ── */
+.main{min-width:0;display:flex;flex-direction:column}
+.top{position:sticky;top:0;z-index:20;background:color-mix(in oklab,var(--bg) 82%,transparent);backdrop-filter:blur(14px) saturate(1.2);border-bottom:1px solid var(--line)}
+.top-in{max-width:760px;margin:0 auto;padding:14px 22px 12px;display:flex;flex-direction:column;gap:12px}
+.top-row{display:flex;align-items:center;gap:10px}
+.title{flex:1;min-width:0;display:flex;align-items:center;gap:12px}
+.title h1{margin:0;font-size:21px;letter-spacing:-.01em;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.title .sub{font-size:12.5px;color:var(--text3);white-space:nowrap}
+.tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.search{position:relative;flex:1;min-width:160px}
+.search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text3)}
+.search .field{width:100%;padding-left:36px;height:38px}
+.seg{display:inline-flex;padding:3px;border-radius:12px;background:var(--bg2);border:1px solid var(--line)}
+.seg button{height:30px;padding:0 12px;border-radius:9px;border:0;background:none;color:var(--text2);font-weight:600;font-size:13px}
+.seg button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+
+/* countdown ring */
+.clock{display:flex;align-items:center;gap:10px;padding:0 12px 0 6px;height:38px;border-radius:11px;border:1px solid var(--line2);background:var(--card)}
+.ring{width:26px;height:26px}
+.ring circle{fill:none;stroke-width:3}
+.ring .bgc{stroke:var(--line2)}
+.ring .fg{stroke:var(--accent);stroke-linecap:round;transition:stroke-dashoffset 1s linear}
+.clock .t{font:600 12.5px/1.15 var(--mono);font-variant-numeric:tabular-nums}
+.clock .l{font-size:10.5px;color:var(--text3);letter-spacing:.04em}
+.clock.running .fg{animation:spin 1.1s linear infinite;transform-origin:50% 50%;stroke-dasharray:20 60}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── feed ── */
+.feed{max-width:760px;width:100%;margin:0 auto;padding:18px 22px 80px;display:flex;flex-direction:column;gap:14px}
+.daysep{display:flex;align-items:center;gap:12px;color:var(--text3);font-size:12px;font-weight:700;letter-spacing:.08em;margin:10px 4px 0}
+.daysep::after{content:"";flex:1;height:1px;background:var(--line)}
+.post{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px 12px;box-shadow:var(--shadow);position:relative;transition:border-color .2s, background .2s}
+.post.fresh{animation:rise .35s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+.post:hover{border-color:var(--line2);background:var(--card-h)}
+.post.unread{border-color:color-mix(in oklab,var(--accent) 45%,var(--line))}
+.post.unread::before{content:"";position:absolute;left:-1px;top:18px;bottom:18px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+.p-head{display:flex;align-items:center;gap:11px}
+.p-head .av{width:42px;height:42px}
+.p-who{flex:1;min-width:0;line-height:1.3}
+.p-name{font-weight:700;font-size:14.5px;display:flex;align-items:center;gap:5px;min-width:0}
+.p-name span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.verified{color:var(--link)}
+.p-sub{font-size:12.5px;color:var(--text3);display:flex;gap:6px;flex-wrap:wrap}
+.p-sub time{cursor:help}
+.badge{font-size:10.5px;font-weight:800;letter-spacing:.08em;padding:2px 7px;border-radius:6px;background:var(--accent);color:var(--accent-ink)}
+.badge.pin{background:color-mix(in oklab,var(--text) 10%,transparent);color:var(--text2)}
+.p-text{margin:12px 0 0;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;font-size:15px;line-height:1.7}
+.p-text a{color:var(--link)}
+.p-text a:hover{text-decoration:underline}
+.media{display:grid;gap:4px;margin-top:12px;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.media.n1{grid-template-columns:1fr}
+.media.n2{grid-template-columns:1fr 1fr;aspect-ratio:16/9}
+.media.n3{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;aspect-ratio:16/9}
+.media.n3 .m:first-child{grid-row:span 2}
+.media.n4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;aspect-ratio:16/9}
+.m{position:relative;display:block;background:var(--bg2);overflow:hidden;min-height:0}
+.m img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .4s ease}
+.media.n1 .m img{max-height:520px;height:auto;object-fit:contain;background:#000}
+.m:hover img{transform:scale(1.02)}
+.play{position:absolute;inset:0;display:grid;place-items:center}
+.play i{width:58px;height:58px;border-radius:50%;background:rgba(10,12,16,.65);backdrop-filter:blur(6px);display:grid;place-items:center;border:1px solid rgba(255,255,255,.25)}
+.dur{position:absolute;left:10px;bottom:10px;font:600 11.5px var(--mono);background:rgba(0,0,0,.7);color:#fff;padding:2px 7px;border-radius:6px}
+.quote{display:block;cursor:pointer;margin-top:12px;border:1px solid var(--line2);border-radius:14px;padding:12px 14px;background:color-mix(in oklab,var(--bg2) 60%,transparent);transition:border-color .15s}
+.quote:hover{border-color:color-mix(in oklab,var(--text) 25%,var(--line2))}
+.quote .p-head .av{width:22px;height:22px}
+.quote .p-text{font-size:14px;margin-top:6px;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.quote .media{margin-top:8px}
+.p-foot{display:flex;align-items:center;gap:4px;margin-top:10px;color:var(--text3);font-size:12.5px;font-variant-numeric:tabular-nums}
+.metric{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:9px}
+.metric svg{opacity:.85}
+.p-foot .grow{flex:1}
+.act{border:0;background:none;color:var(--text3);width:34px;height:34px;border-radius:10px;display:grid;place-items:center;transition:background .15s,color .15s}
+.act:hover{background:color-mix(in oklab,var(--text) 7%,transparent);color:var(--text)}
+.act.on{color:var(--accent)}
+.more{align-self:center;margin:8px 0}
+.state{padding:70px 20px;text-align:center;color:var(--text3)}
+.state h2{color:var(--text);font-size:19px;margin:16px 0 6px}
+.state p{margin:0 auto;max-width:420px;line-height:1.8}
+.state .art{width:96px;height:96px;margin:0 auto;opacity:.9}
+.skel{height:150px;border-radius:var(--r);background:linear-gradient(100deg,var(--card) 40%,var(--card-h) 50%,var(--card) 60%) 0 0/300% 100%;border:1px solid var(--line);animation:sh 1.4s linear infinite}
+@keyframes sh{to{background-position:-150% 0}}
+
+/* ── aside ── */
+.aside{border-left:1px solid var(--line);height:100vh;position:sticky;top:0;overflow:auto;padding:22px 18px;display:flex;flex-direction:column;gap:16px;scrollbar-width:thin}
+.box{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.box-h{padding:14px 16px 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);font-weight:700}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+.stat{background:var(--card);padding:14px 16px}
+.stat b{display:block;font-size:24px;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.2}
+.stat span{font-size:12px;color:var(--text3)}
+.prof .banner{height:92px;background:linear-gradient(135deg,color-mix(in oklab,var(--accent) 35%,var(--bg2)),var(--bg2));background-size:cover;background-position:center}
+.prof .pi{padding:0 16px 16px}
+.prof .av{width:68px;height:68px;border:4px solid var(--card);margin-top:-34px}
+.prof h3{margin:6px 0 0;font-size:17px;display:flex;align-items:center;gap:6px}
+.prof .h{color:var(--text3);font-size:13px}
+.prof .bio{margin:10px 0;font-size:13.5px;color:var(--text2);white-space:pre-wrap;line-height:1.65}
+.prof .nums{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--text3)}
+.prof .nums span{white-space:nowrap}
+.prof .nums b{color:var(--text);font-variant-numeric:tabular-nums}
+.prof .row{display:flex;gap:8px;margin-top:14px}
+.err{margin:0 16px 14px;padding:10px 12px;border-radius:10px;background:color-mix(in oklab,var(--bad) 12%,transparent);color:color-mix(in oklab,var(--bad) 80%,var(--text));font-size:12.5px;line-height:1.6}
+.runs{list-style:none;margin:0;padding:6px 8px 10px}
+.runs li{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;font-size:12.5px;color:var(--text2)}
+.runs li:hover{background:color-mix(in oklab,var(--text) 4%,transparent)}
+.runs .rt{font:600 12px var(--mono);color:var(--text);min-width:44px}
+.runs .rn{margin-left:auto;font-variant-numeric:tabular-nums}
+.tag{font-size:10.5px;padding:1px 6px;border-radius:5px;background:color-mix(in oklab,var(--text) 8%,transparent);color:var(--text3);font-weight:700}
+.foot-note{font-size:11.5px;color:var(--text3);line-height:1.7;padding:0 4px}
+
+/* ── modal ── */
+dialog{border:1px solid var(--line2);border-radius:20px;background:var(--panel);color:var(--text);padding:0;width:min(560px,calc(100vw - 32px));box-shadow:0 30px 80px -20px rgba(0,0,0,.7)}
+dialog::backdrop{background:rgba(5,6,9,.6);backdrop-filter:blur(4px)}
+.mh{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line)}
+.mh h2{margin:0;font-size:17px}
+.mb{padding:6px 20px 20px;max-height:70vh;overflow:auto}
+.group{padding:16px 0;border-bottom:1px solid var(--line)}
+.group:last-child{border-bottom:0}
+.group h3{margin:0 0 4px;font-size:14px}
+.group p{margin:0 0 12px;color:var(--text3);font-size:12.5px;line-height:1.6}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{height:34px;padding:0 13px;border-radius:10px;border:1px solid var(--line2);background:var(--card);font-weight:600;font-size:13px}
+.chip.on{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.custom{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--text3);font-size:13px}
+.custom .field{flex:none;width:96px;height:34px}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tgl{appearance:none;width:42px;height:24px;border-radius:999px;background:var(--line2);position:relative;cursor:pointer;transition:background .2s;flex:none}
+.tgl::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.tgl:checked{background:var(--accent)}
+.tgl:checked::after{transform:translateX(18px)}
+.mlist{display:flex;flex-direction:column;gap:4px}
+.mrow{display:flex;align-items:center;gap:10px;padding:8px;border-radius:12px;background:var(--bg2)}
+.mrow .av{width:30px;height:30px}
+.mrow .acct-meta{line-height:1.3}
+
+/* ── toast ── */
+.toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:10px;z-index:60;max-width:min(380px,calc(100vw - 40px))}
+.toast{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:var(--panel);border:1px solid var(--line2);box-shadow:0 18px 50px -12px rgba(0,0,0,.6);animation:tin .3s ease both;font-size:13.5px;line-height:1.5}
+.toast .av{width:32px;height:32px}
+.toast b{display:block}
+.toast small{color:var(--text3);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.toast.bad{border-color:color-mix(in oklab,var(--bad) 50%,var(--line2))}
+@keyframes tin{from{opacity:0;transform:translateY(10px) scale(.98)}}
+.kbd{font:600 11px var(--mono);padding:1px 6px;border:1px solid var(--line2);border-bottom-width:2px;border-radius:6px;color:var(--text2)}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{position:fixed;inset:0 auto 0 0;width:300px;z-index:40;transform:translateX(-105%);transition:transform .25s ease;box-shadow:20px 0 60px rgba(0,0,0,.5)}
+  .app.drawer .side{transform:none}
+  .menu-btn{display:inline-flex!important}
+  .top-in{padding:10px 14px}
+  .feed{padding:14px 12px 60px}
+  .title h1{font-size:18px}
+  .title .sub{display:none}
+  .clock .l{display:none}
+  #fetch-btn span{display:none}
+  #fetch-btn{width:38px;padding:0;justify-content:center}
+  .post{padding:14px 14px 10px}
+  .p-text{font-size:14.5px}
+}
+@media (max-width:420px){ .tools .btn.ghost{width:38px;padding:0;justify-content:center;font-size:0;gap:0} }
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="scrim" onclick="UI.drawer(false)"></div>
+
+  <!-- Sidebar -->
+  <aside class="side" aria-label="アカウント">
+    <div class="brand">
+      <div class="brand-mark"><svg width="20" height="20" viewBox="0 0 64 64"><circle cx="32" cy="32" r="17" fill="none" stroke="#e8b86d" stroke-width="6"/><circle cx="32" cy="32" r="6" fill="#e8b86d"/></svg></div>
+      <div><div class="brand-name">xwatch</div><div class="brand-sub">X ACCOUNT OBSERVATORY</div></div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item" data-view="all" onclick="UI.select(null)">
+        <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+        <span class="lbl">すべての投稿</span><span class="pill" id="unread-all" hidden>0</span>
+      </button>
+      <button class="nav-item" data-view="starred" onclick="UI.select('__starred')">
+        <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg></span>
+        <span class="lbl">スター</span><span class="pill dim" id="starred-count" hidden>0</span>
+      </button>
+    </nav>
+    <div class="sec-h"><span>アカウント</span><span id="acct-count">0</span></div>
+    <div class="accts" id="accts"></div>
+    <div class="add">
+      <form id="add-form" autocomplete="off">
+        <label class="sr" for="add-input">追加するアカウント</label>
+        <input class="field" id="add-input" placeholder="@handle または URL" spellcheck="false">
+        <button class="btn primary icon" title="追加"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      </form>
+      <div class="hint">鍵アカウントは取得できません。公開アカウントの直近数件を巡回します。</div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <header class="top">
+      <div class="top-in">
+        <div class="top-row">
+          <button class="btn icon ghost menu-btn" onclick="UI.drawer(true)" aria-label="メニュー"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+          <div class="title"><h1 id="view-title">すべての投稿</h1><span class="sub" id="view-sub"></span></div>
+          <div class="clock" id="clock" title="次の自動巡回">
+            <svg class="ring" viewBox="0 0 30 30"><circle class="bgc" cx="15" cy="15" r="12"/><circle class="fg" id="ring-fg" cx="15" cy="15" r="12" stroke-dasharray="75.4" stroke-dashoffset="0" transform="rotate(-90 15 15)"/></svg>
+            <div><div class="t" id="clock-t">--:--</div><div class="l" id="clock-l">次の巡回</div></div>
+          </div>
+          <button class="btn primary" id="fetch-btn" onclick="UI.fetchNow()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg><span>今すぐ取得</span></button>
+          <button class="btn icon" onclick="UI.openSettings()" title="設定"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+        </div>
+        <div class="tools">
+          <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <label class="sr" for="q">投稿を検索</label><input class="field" id="q" placeholder="保存済みの投稿を検索  /" spellcheck="false"></div>
+          <div class="seg" role="tablist"><button class="on" data-f="all">すべて</button><button data-f="unread">未読</button></div>
+          <button class="btn ghost" onclick="UI.markAllRead()" title="表示中を既読にする"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 13 4 4L16 7M10 17l1 1L22 7"/></svg>既読にする</button>
+        </div>
+      </div>
+    </header>
+    <section class="feed" id="feed" aria-live="polite"></section>
+  </main>
+
+  <!-- Aside -->
+  <aside class="aside" id="aside"></aside>
+</div>
+
+<dialog id="settings">
+  <div class="mh"><h2>設定</h2><button class="btn icon ghost" onclick="settings.close()" aria-label="閉じる"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+  <div class="mb">
+    <div class="group">
+      <h3>巡回の間隔</h3>
+      <p>この間隔ごとに、有効なアカウントを順番に取得します。Xへの負担と制限を避けるため最短10分です。</p>
+      <div class="chips" id="interval-chips"></div>
+      <div class="custom">カスタム <input class="field" type="number" id="interval-custom" min="10" max="1440" step="5"> 分 <button class="btn" onclick="UI.saveInterval(+document.getElementById('interval-custom').value)">適用</button></div>
+    </div>
+    <div class="group switch">
+      <div><h3>自動巡回</h3><p style="margin:0">オフにすると「今すぐ取得」した時だけ取得します。</p></div>
+      <input type="checkbox" class="tgl" id="auto-toggle" onchange="UI.setPaused(!this.checked)">
+    </div>
+    <div class="group switch">
+      <div><h3>デスクトップ通知</h3><p style="margin:0">このタブを開いている間、新着をOSの通知でも知らせます。</p></div>
+      <input type="checkbox" class="tgl" id="notify-toggle" onchange="UI.setNotify(this.checked)">
+    </div>
+    <div class="group switch">
+      <div><h3>表示したら既読</h3><p style="margin:0">画面に1秒以上表示された投稿を自動で既読にします。</p></div>
+      <input type="checkbox" class="tgl" id="autoread-toggle" onchange="UI.setPref('autoread',this.checked)">
+    </div>
+    <div class="group switch">
+      <div><h3>テーマ</h3><p style="margin:0">ダーク / ライト</p></div>
+      <div class="seg" id="theme-seg"><button data-t="dark">ダーク</button><button data-t="light">ライト</button></div>
+    </div>
+    <div class="group">
+      <h3>アカウント管理</h3>
+      <p>一時停止したアカウントは定期巡回から外れます（保存済みの投稿は残ります）。</p>
+      <div class="mlist" id="manage-list"></div>
+    </div>
+    <div class="group">
+      <h3>AI連携（MCP）</h3>
+      <p>Claude や Codex などの AI に、保存済みの最新投稿を Markdown で読ませられます。新着の確認だけでなく、アカウント追加・削除、巡回設定、既読・スター、今すぐ取得までダッシュボードと同じ操作ができます。AI の「新着」既読位置はダッシュボードの未読とは別です。</p>
+      <div class="seg ai-tabs" id="ai-seg"><button data-k="claude">Claude Desktop</button><button data-k="codex">Codex</button><button data-k="code">Claude Code</button><button data-k="md">Markdown URL</button></div>
+      <div class="snip"><div class="snip-h"><span id="ai-where"></span><button class="btn" onclick="UI.copySnippet()">コピー</button></div><pre id="ai-snippet"></pre></div>
+    </div>
+    <div class="group">
+      <h3>データ</h3>
+      <p>保存した全投稿をJSONで書き出します。データは xwatch フォルダ内の data/ にあります。</p>
+      <a class="btn" href="/api/export" download><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>JSONを書き出す</a>
+    </div>
+    <p class="foot-note" id="version-note"></p>
+  </div>
+</dialog>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+"use strict";
+/* ───────────── utilities ───────────── */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const safeUrl = u => /^https:\/\//i.test(u || "") ? u : "#";
+const img = u => /^https:\/\/(pbs|abs)\.twimg\.com\//i.test(u || "") ? "/img?u=" + encodeURIComponent(u) : safeUrl(u);
+const nf = new Intl.NumberFormat("ja-JP");
+function compact(n){
+  if (n == null) return "–";
+  if (n < 1000) return String(n);
+  if (n < 10000) return (n/1000).toFixed(n < 9950 ? 1 : 0).replace(/\.0$/,"") + "K";
+  if (n < 1e8) return (n/1e4).toFixed(n < 99500 ? 1 : 0).replace(/\.0$/,"") + "万";
+  return (n/1e8).toFixed(1).replace(/\.0$/,"") + "億";
+}
+function rel(ts){
+  const d = Date.now()/1000 - ts;
+  if (d < 45) return "たった今";
+  if (d < 3600) return Math.round(d/60) + "分前";
+  if (d < 86400) return Math.round(d/3600) + "時間前";
+  if (d < 86400*7) return Math.round(d/86400) + "日前";
+  return fmtDate(ts, false);
+}
+function fmtDate(ts, withTime = true){
+  const d = new Date(ts*1000);
+  const s = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+  return withTime ? `${s} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}` : s;
+}
+function dayLabel(ts){
+  const d = new Date(ts*1000), t = new Date();
+  const k = x => x.toDateString();
+  const y = new Date(); y.setDate(t.getDate()-1);
+  if (k(d) === k(t)) return "今日";
+  if (k(d) === k(y)) return "昨日";
+  const w = "日月火水木金土"[d.getDay()];
+  return `${d.getMonth()+1}月${d.getDate()}日（${w}）`;
+}
+function hhmm(ts){ const d = new Date(ts*1000); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
+function linkify(text){
+  const re = /(https?:\/\/[^\s<>"'）」]+)|(@[A-Za-z0-9_]{1,15})|(#[\p{L}\p{N}_]+)/gu;
+  let out = "", last = 0, m;
+  while ((m = re.exec(text))) {
+    out += esc(text.slice(last, m.index));
+    const [tok] = m;
+    if (m[1]) {
+      const shown = tok.replace(/^https?:\/\/(www\.)?/, "");
+      out += `<a href="${esc(tok)}" target="_blank" rel="noopener noreferrer">${esc(shown.length > 42 ? shown.slice(0, 41) + "…" : shown)}</a>`;
+    } else if (m[2]) {
+      out += `<a href="https://x.com/${esc(tok.slice(1))}" target="_blank" rel="noopener noreferrer">${esc(tok)}</a>`;
+    } else {
+      out += `<a href="https://x.com/hashtag/${encodeURIComponent(tok.slice(1))}" target="_blank" rel="noopener noreferrer">${esc(tok)}</a>`;
+    }
+    last = m.index + tok.length;
+  }
+  return out + esc(text.slice(last));
+}
+async function api(path, body){
+  const opt = body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)};
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+const AV_FALLBACK = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#2b3542"/><circle cx="20" cy="16" r="7" fill="#6f7a89"/><path d="M6 36c2-8 8-11 14-11s12 3 14 11" fill="#6f7a89"/></svg>`);
+const avatar = (src, cls = "av") => `<img class="${cls}" src="${esc(safeUrl(src) === "#" ? AV_FALLBACK : img(src))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${AV_FALLBACK}'">`;
+const ICON = {
+  reply:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 20.5l1.5-4.6A8.4 8.4 0 1 1 21 11.5z"/></svg>',
+  repost:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
+  like:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20.5s-7.5-4.6-9.3-9.6C1.5 7.4 3.7 4 7.2 4c2 0 3.6 1.1 4.8 2.8C13.2 5.1 14.8 4 16.8 4c3.5 0 5.7 3.4 4.5 6.9-1.8 5-9.3 9.6-9.3 9.6z"/></svg>',
+  views:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  bookmark:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
+  star:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>',
+  starOn:'<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>',
+  ext:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  verified:'<svg class="verified" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.8 14.6 4l3.4-.3.9 3.3 3 1.7-1.3 3.2 1.3 3.2-3 1.7-.9 3.3-3.4-.3L12 22.2 9.4 20l-3.4.3-.9-3.3-3-1.7L3.4 12 2.1 8.8l3-1.7.9-3.3 3.4.3z"/><path d="m8 12.3 2.7 2.7L16.3 9" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  play:'<svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M8 5.5v13l11-6.5z"/></svg>',
+};
+
+/* ───────────── state ───────────── */
+const prefs = Object.assign({theme: matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark", autoread: true, notify: false},
+  JSON.parse(localStorage.getItem("xwatch.prefs") || "{}"));
+const S = { view: null, filter: "all", q: "", posts: [], loading: false, end: false, state: null, eventSeq: null, timer: null, pending: new Set(), shown: new Set() };
+
+/* ───────────── UI ───────────── */
+const UI = {
+  init(){
+    this.applyTheme();
+    document.querySelectorAll(".seg [data-f]").forEach(b => b.onclick = () => { S.filter = b.dataset.f; document.querySelectorAll(".seg [data-f]").forEach(x => x.classList.toggle("on", x === b)); this.reload(); });
+    document.querySelectorAll("#theme-seg button").forEach(b => b.onclick = () => this.setPref("theme", b.dataset.t));
+    let qt; $("#q").addEventListener("input", e => { clearTimeout(qt); qt = setTimeout(() => { S.q = e.target.value.trim(); this.reload(); }, 250); });
+    $("#add-form").addEventListener("submit", e => { e.preventDefault(); this.addAccount(); });
+    document.addEventListener("keydown", e => {
+      if (e.target.matches("input,textarea")) { if (e.key === "Escape") e.target.blur(); return; }
+      if (e.key === "/") { e.preventDefault(); $("#q").focus(); }
+      else if (e.key === "r") this.fetchNow();
+      else if (e.key === "u") $(`.seg [data-f="${S.filter === "unread" ? "all" : "unread"}"]`).click();
+    });
+    this.io = new IntersectionObserver(es => es.forEach(en => {
+      const id = en.target.dataset.id;
+      if (en.isIntersecting && en.intersectionRatio > .6) {
+        en.target._t = setTimeout(() => this.autoRead(id, en.target), 1000);
+      } else clearTimeout(en.target._t);
+    }), {threshold: [0, .6, 1]});
+    const openQuote = e => { const qd = e.target.closest(".quote"); if (!qd || e.target.closest("a")) return; if (e.type === "keydown" && e.key !== "Enter") return; window.open(qd.dataset.href, "_blank", "noopener"); };
+    $("#feed").addEventListener("click", openQuote); $("#feed").addEventListener("keydown", openQuote);
+    this.moreIO = new IntersectionObserver(es => es.forEach(en => en.isIntersecting && this.loadMore()), {rootMargin: "600px"});
+    const h = decodeURIComponent(location.hash.slice(1));
+    if (h.startsWith("@")) S.view = h.slice(1);
+    this.poll(true).then(() => { if (h === "settings") this.openSettings(); this.renderTitle(); });
+    this.reload();
+    setInterval(() => this.tick(), 1000);
+    setInterval(() => document.querySelectorAll("time[data-ts]").forEach(t => t.textContent = rel(+t.dataset.ts)), 30000);
+  },
+  setPref(k, v){ prefs[k] = v; localStorage.setItem("xwatch.prefs", JSON.stringify(prefs)); if (k === "theme") this.applyTheme(); this.syncSettings(); },
+  applyTheme(){ document.documentElement.dataset.theme = prefs.theme; document.querySelectorAll("#theme-seg button").forEach(b => b.classList.toggle("on", b.dataset.t === prefs.theme)); },
+  drawer(open){ $("#app").classList.toggle("drawer", open); },
+
+  /* polling */
+  async poll(first = false){
+    clearTimeout(S.timer);
+    try {
+      const st = await api(`/api/state?since=${S.eventSeq ?? 0}`);
+      const prevRunning = S.state?.scheduler.running;
+      S.state = st;
+      if (S.eventSeq === null) S.eventSeq = st.scheduler.event_seq;
+      else if (st.events.length) { st.events.forEach(ev => this.announce(ev)); S.eventSeq = st.scheduler.event_seq; }
+      this.renderSide(); this.renderAside(); this.renderTitle();
+      // 概要の数値が変わらなくても、完了した巡回ログを定期的に更新する。
+      if (!st.scheduler.running && $("#runs")) this.loadRuns();
+      if ((prevRunning && !st.scheduler.running) || (first === false && st.events.length)) this.refreshTop();
+    } catch (e) {
+      if (!this._offline) this.toast(null, "サーバーに接続できません", "xwatch.py が起動しているか確認してください。", true);
+      this._offline = true; S.timer = setTimeout(() => this.poll(), 5000); return;
+    }
+    if (this._offline) { this._offline = false; this.toast(null, "再接続しました", ""); }
+    S.timer = setTimeout(() => this.poll(), S.state.scheduler.running ? 1500 : 10000);
+  },
+  tick(){
+    const st = S.state?.scheduler; if (!st) return;
+    const clock = $("#clock"), t = $("#clock-t"), l = $("#clock-l"), fg = $("#ring-fg");
+    clock.classList.toggle("running", st.running);
+    $("#fetch-btn").disabled = st.running;
+    if (st.running) {
+      const [i, n] = st.progress; t.textContent = `${Math.min(i+1, n)}/${n}`; l.textContent = st.current ? "@" + st.current : "取得中"; fg.style.strokeDashoffset = 0; return;
+    }
+    if (st.paused || !st.next_run) { t.textContent = "停止中"; l.textContent = "自動巡回オフ"; fg.style.strokeDashoffset = 75.4; return; }
+    const left = Math.max(0, st.next_run - Date.now()/1000);
+    const total = st.interval_min * 60;
+    const m = Math.floor(left/60), s = Math.floor(left%60);
+    t.textContent = left >= 3600 ? `${Math.floor(m/60)}時間${m%60}分` : `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+    l.textContent = `次の巡回 · ${st.interval_min}分毎`;
+    fg.style.strokeDashoffset = (75.4 * (1 - Math.min(1, left/total))).toFixed(2);
+  },
+
+  /* sidebar */
+  statusOf(a){
+    const st = S.state.scheduler;
+    if (st.running && st.current && st.current.toLowerCase() === a.handle.toLowerCase()) return ["spin", "取得中"];
+    if (!a.enabled) return ["", "一時停止"];
+    if (a.last_error) return [a.fail_count >= 3 ? "bad" : "warn", a.last_error];
+    if (a.last_ok) return ["ok", "最終取得 " + fmtDate(a.last_ok)];
+    return ["", "未取得"];
+  },
+  renderSide(){
+    const st = S.state, accts = st.accounts;
+    $("#acct-count").textContent = `${accts.length}/${st.limits.max_accounts}`;
+    const ua = $("#unread-all"); ua.hidden = !st.stats.unread; ua.textContent = st.stats.unread;
+    const sc = $("#starred-count"); sc.hidden = !st.stats.starred; sc.textContent = st.stats.starred;
+    document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", (b.dataset.view === "all" && S.view === null) || (b.dataset.view === "starred" && S.view === "__starred")));
+    const box = $("#accts");
+    if (!accts.length) { box.innerHTML = `<div class="empty-side">まだアカウントがありません。<br>下の入力欄に <b>@handle</b> を入れて追加すると、すぐ最初の取得が始まります。</div>`; return; }
+    box.innerHTML = accts.map(a => {
+      const p = a.profile || {}, [cls, tip] = this.statusOf(a);
+      return `<button class="acct ${S.view === a.handle ? "active" : ""} ${a.enabled ? "" : "off"}" data-h="${esc(a.handle)}" title="${esc(tip)}">
+        <span class="av-wrap">${avatar(p.avatar)}<span class="dot ${cls}"></span></span>
+        <span class="acct-meta"><div class="acct-name">${esc(p.name || a.handle)}</div><div class="acct-handle">@${esc(a.handle)}</div></span>
+        ${a.unread ? `<span class="pill">${a.unread > 99 ? "99+" : a.unread}</span>` : ""}</button>`;
+    }).join("");
+    box.querySelectorAll(".acct").forEach(b => b.onclick = () => this.select(b.dataset.h));
+  },
+  renderTitle(){
+    const st = S.state; if (!st) return;
+    let title = "すべての投稿", sub = `${nf.format(st.stats.total)}件を保存`;
+    if (S.view === "__starred") { title = "スター"; sub = `${st.stats.starred}件`; }
+    else if (S.view) {
+      const a = st.accounts.find(x => x.handle.toLowerCase() === S.view.toLowerCase());
+      title = a?.profile?.name || "@" + S.view; sub = "@" + S.view + (a ? ` · ${a.total}件` : "");
+    }
+    $("#view-title").textContent = title; $("#view-sub").textContent = sub;
+    const unread = st.stats.unread; document.title = unread ? `(${unread}) xwatch` : "xwatch";
+  },
+
+  /* aside */
+  renderAside(){
+    const st = S.state, el = $("#aside"); if (!el || getComputedStyle(el).display === "none") return;
+    let html = "";
+    const a = S.view && S.view !== "__starred" ? st.accounts.find(x => x.handle.toLowerCase() === S.view.toLowerCase()) : null;
+    if (a) {
+      const p = a.profile || {};
+      html += `<div class="box prof"><div class="banner" style="${p.banner ? `background-image:url('${esc(img(p.banner))}')` : ""}"></div><div class="pi">
+        ${avatar(p.avatar)}<h3>${esc(p.name || a.handle)} ${p.verified ? ICON.verified : ""}</h3><div class="h">@${esc(a.handle)}</div>
+        ${p.bio ? `<div class="bio">${linkify(p.bio)}</div>` : ""}
+        <div class="nums"><span><b>${compact(p.followers)}</b> フォロワー</span><span><b>${compact(p.following)}</b> フォロー</span><span><b>${compact(p.tweets)}</b> 投稿</span></div>
+        <div class="row"><button class="btn" onclick="UI.fetchNow('${esc(a.handle)}')">${ICON.repost}このアカウントを取得</button><a class="btn icon" href="https://x.com/${esc(a.handle)}" target="_blank" rel="noopener" title="Xで開く">${ICON.ext}</a></div>
+        </div>${a.last_error ? `<div class="err">${esc(a.last_error)}${a.fail_count >= 3 ? `<br>連続${a.fail_count}回失敗のため、定期巡回の頻度を自動で下げています。` : ""}</div>` : ""}</div>`;
+    } else {
+      const okN = st.accounts.filter(x => x.last_ok && !x.last_error).length;
+      html += `<div class="box"><div class="box-h">概要</div><div class="stats">
+        <div class="stat"><b>${nf.format(st.stats.unread)}</b><span>未読</span></div>
+        <div class="stat"><b>${nf.format(st.stats.today)}</b><span>24時間の新着</span></div>
+        <div class="stat"><b>${nf.format(st.stats.total)}</b><span>保存済み</span></div>
+        <div class="stat"><b>${okN}<small style="font-size:14px;color:var(--text3)">/${st.accounts.length}</small></b><span>正常なアカウント</span></div></div></div>`;
+    }
+    html += `<div class="box"><div class="box-h">巡回ログ</div><ul class="runs" id="runs"><li style="color:var(--text3)">読み込み中…</li></ul></div>
+      <p class="foot-note"><span class="kbd">/</span> 検索　<span class="kbd">R</span> 今すぐ取得　<span class="kbd">U</span> 未読切替<br>ログインなしで見える範囲（各アカウント直近数件）を取得します。X側の仕様変更で取得できなくなることがあります。</p>`;
+    if (el._sig !== html) { el.innerHTML = html; el._sig = html; this.loadRuns(); }
+  },
+  async loadRuns(){
+    try {
+      const {runs} = await api("/api/runs");
+      const ul = $("#runs"); if (!ul) return;
+      ul.innerHTML = runs.length ? runs.slice(0, 12).map(r => `<li><span class="rt">${hhmm(r.started_at)}</span><span class="tag">${{schedule:"自動",manual:"手動",cli:"CLI"}[r.trigger] || esc(r.trigger)}</span>
+        <span>${r.ok}件成功${r.failed ? ` · <span style="color:var(--bad)">${r.failed}件失敗</span>` : ""}</span><span class="rn">${r.new_posts ? `<b style="color:var(--accent)">+${r.new_posts}</b>` : "±0"}</span></li>`).join("")
+        : `<li style="color:var(--text3)">まだ巡回していません</li>`;
+    } catch {}
+  },
+
+  /* feed */
+  select(h){ S.view = h; history.replaceState(null, "", h && h !== "__starred" ? "#@" + h : location.pathname); this.drawer(false); this.renderSide(); this.renderTitle(); if (S.state) { $("#aside")._sig = null; this.renderAside(); } this.reload(); window.scrollTo({top: 0}); },
+  query(before){
+    const p = new URLSearchParams({limit: 30});
+    if (S.view === "__starred") p.set("starred", "1"); else if (S.view) p.set("handle", S.view);
+    if (S.filter === "unread") p.set("unread", "1");
+    if (S.q) p.set("q", S.q);
+    if (before) p.set("before", before);
+    return "/api/posts?" + p;
+  },
+  async reload(){
+    S.posts = []; S.end = false;
+    $("#feed").innerHTML = `<div class="skel"></div><div class="skel"></div><div class="skel" style="opacity:.6"></div>`;
+    const token = (this._tok = (this._tok || 0) + 1);
+    try { const {posts} = await api(this.query()); if (token !== this._tok) return; S.posts = posts; S.end = posts.length < 30; this.renderFeed(); }
+    catch (e) { $("#feed").innerHTML = this.stateHTML("読み込めませんでした", esc(e.message)); }
+  },
+  async loadMore(){
+    if (S.loading || S.end || !S.posts.length) return;
+    S.loading = true;
+    try { const {posts} = await api(this.query(S.posts[S.posts.length-1].id)); S.posts.push(...posts); S.end = posts.length < 30; this.renderFeed(true); }
+    finally { S.loading = false; }
+  },
+  async refreshTop(){
+    // 新着を先頭に差し込む（スクロール位置を保つ）
+    try {
+      const {posts} = await api(this.query());
+      const known = new Set(S.posts.map(p => p.id));
+      const fresh = posts.filter(p => !known.has(p.id));
+      const byId = new Map(posts.map(p => [p.id, p]));
+      S.posts = S.posts.map(p => byId.get(p.id) || p);
+      if (fresh.length || !S.posts.length) { S.posts = [...fresh, ...S.posts].sort((a, b) => (BigInt(b.id) > BigInt(a.id) ? 1 : -1)); }
+      this.renderFeed();
+    } catch {}
+  },
+  stateHTML(title, body, art = true){
+    return `<div class="state">${art ? `<svg class="art" viewBox="0 0 96 96" fill="none"><circle cx="48" cy="48" r="34" stroke="var(--line2)" stroke-width="2" stroke-dasharray="4 6"/><circle cx="48" cy="48" r="20" stroke="var(--accent)" stroke-width="3"/><circle cx="48" cy="48" r="6" fill="var(--accent)"/><circle cx="78" cy="30" r="3" fill="var(--text3)"/><circle cx="20" cy="66" r="2" fill="var(--text3)"/></svg>` : ""}<h2>${title}</h2><p>${body}</p></div>`;
+  },
+  renderFeed(){
+    const feed = $("#feed");
+    this.io.disconnect(); this.moreIO.disconnect();
+    if (!S.posts.length) {
+      const st = S.state;
+      let t = "まだ投稿がありません", b = "最初の取得を待つか、「今すぐ取得」を押してください。";
+      if (st && !st.accounts.length) { t = "最初のアカウントを追加しましょう"; b = "左下の入力欄に <b>@handle</b> を入れると、すぐ取得が始まります。以降は設定した間隔で自動巡回します。"; }
+      else if (S.q) { t = "見つかりませんでした"; b = `「${esc(S.q)}」を含む保存済みの投稿はありません。`; }
+      else if (S.filter === "unread") { t = "すべて読みました"; b = "新しい投稿が見つかると、ここに表示されます。"; }
+      else if (S.view === "__starred") { t = "スターはまだありません"; b = "気になる投稿の ☆ を押すと、ここに集まります。"; }
+      feed.innerHTML = this.stateHTML(t, b); return;
+    }
+    let html = "", lastDay = "";
+    for (const p of S.posts) {
+      const day = dayLabel(p.created_at);
+      if (day !== lastDay) { html += `<div class="daysep">${day}</div>`; lastDay = day; }
+      html += this.postHTML(p);
+    }
+    if (!S.end) html += `<button class="btn more" id="more" onclick="UI.loadMore()">さらに読み込む</button>`;
+    feed.innerHTML = html;
+    if (prefs.autoread) feed.querySelectorAll(".post.unread").forEach(el => this.io.observe(el));
+    const more = $("#more"); if (more) this.moreIO.observe(more);
+  },
+  mediaHTML(media, link, nested = false){
+    if (!media?.length) return "";
+    const tag = nested ? "span" : "a";
+    const items = media.slice(0, 4);
+    return `<div class="media n${items.length}">` + items.map(m => {
+      const isVid = m.type === "video" || m.type === "animated_gif";
+      const href = safeUrl(m.url || link);
+      const dur = m.duration_ms ? `${Math.floor(m.duration_ms/60000)}:${String(Math.floor(m.duration_ms/1000)%60).padStart(2,"0")}` : (m.type === "animated_gif" ? "GIF" : "");
+      const src = safeUrl(m.thumb) === "#" ? "" : img(m.thumb + (items.length === 1 ? "" : "?name=small"));
+      return `<${tag} class="m" ${nested ? "" : `href="${esc(href)}" target="_blank" rel="noopener noreferrer"`}><img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" ${items.length === 1 && m.w && m.h ? `width="${m.w}" height="${m.h}"` : ""}>
+        ${isVid ? `<span class="play"><i>${ICON.play}</i></span>${dur ? `<span class="dur">${dur}</span>` : ""}` : ""}</${tag}>`;
+    }).join("") + `</div>`;
+  },
+  postHTML(p){
+    const a = p.author || {}, c = p.counts || {};
+    const metric = (icon, v, label) => v == null ? "" : `<span class="metric" title="${label} ${nf.format(v)}">${icon}${compact(v)}</span>`;
+    const q = p.quoted;
+    const quote = q ? `<div class="quote" role="link" tabindex="0" data-href="${esc(safeUrl(q.permalink))}">
+        <div class="p-head">${avatar(q.author?.avatar)}<div class="p-who"><div class="p-name"><span>${esc(q.author?.name)}</span>${q.author?.verified ? ICON.verified : ""}<span style="font-weight:400;color:var(--text3)">@${esc(q.author?.screen_name)} · ${rel(q.created_at)}</span></div></div></div>
+        ${q.text ? `<div class="p-text">${esc(q.text)}</div>` : ""}${this.mediaHTML(q.media, q.permalink, true)}</div>` : "";
+    const fresh = !S.shown.has(p.id); S.shown.add(p.id);
+    return `<article class="post ${p.is_read ? "" : "unread"} ${fresh ? "fresh" : ""}" data-id="${esc(p.id)}">
+      <div class="p-head">
+        <a href="https://x.com/${esc(a.screen_name)}" target="_blank" rel="noopener noreferrer">${avatar(a.avatar)}</a>
+        <div class="p-who">
+          <div class="p-name"><span>${esc(a.name || p.handle)}</span>${a.verified ? ICON.verified : ""}</div>
+          <div class="p-sub"><span>@${esc(a.screen_name || p.handle)}</span><span>·</span><time data-ts="${p.created_at}" title="${fmtDate(p.created_at)}">${rel(p.created_at)}</time></div>
+        </div>
+        ${p.pinned ? `<span class="badge pin">固定</span>` : ""}${p.is_read ? "" : `<span class="badge">NEW</span>`}
+      </div>
+      ${p.text ? `<div class="p-text">${linkify(p.text)}</div>` : ""}
+      ${this.mediaHTML(p.media, p.permalink)}${quote}
+      <div class="p-foot">
+        ${metric(ICON.reply, c.replies, "返信")}${metric(ICON.repost, (c.reposts ?? 0) + (c.quotes ?? 0), "リポスト+引用")}${metric(ICON.like, c.likes, "いいね")}${metric(ICON.views, c.views, "表示")}
+        <span class="grow"></span>
+        <button class="act ${p.starred ? "on" : ""}" title="スター" onclick="UI.star('${esc(p.id)}', this)">${p.starred ? ICON.starOn : ICON.star}</button>
+        <a class="act" href="${esc(safeUrl(p.permalink))}" target="_blank" rel="noopener noreferrer" title="Xで開く" onclick="UI.autoRead('${esc(p.id)}')">${ICON.ext}</a>
+      </div></article>`;
+  },
+
+  /* actions */
+  async addAccount(){
+    const inp = $("#add-input"), v = inp.value.trim(); if (!v) return;
+    try { const r = await api("/api/accounts", {handle: v}); inp.value = ""; this.toast(null, `@${r.handle} を追加しました`, "最初の取得を始めています…"); this.poll(); }
+    catch (e) { this.toast(null, "追加できませんでした", e.message, true); }
+  },
+  async fetchNow(handle){
+    try { await api("/api/fetch", handle ? {handle} : {}); this.poll(); } catch (e) { this.toast(null, "取得を開始できませんでした", e.message, true); }
+  },
+  autoRead(id, el){
+    const p = S.posts.find(x => x.id === id); if (!p || p.is_read) return;
+    p.is_read = true; S.pending.add(id);
+    const node = el || document.querySelector(`.post[data-id="${CSS.escape(id)}"]`);
+    if (node) { node.classList.remove("unread"); node.querySelector(".badge:not(.pin)")?.remove(); this.io.unobserve(node); }
+    clearTimeout(this._rt); this._rt = setTimeout(() => this.flushRead(), 600);
+  },
+  async flushRead(){
+    const ids = [...S.pending]; S.pending.clear(); if (!ids.length) return;
+    try { await api("/api/read", {ids}); this.poll(); } catch {}
+  },
+  async markAllRead(){
+    const body = S.view && S.view !== "__starred" ? {handle: S.view} : {};
+    try { const r = await api("/api/read", body); S.posts.forEach(p => p.is_read = true); this.renderFeed(); this.poll(); if (r.count) this.toast(null, `${r.count}件を既読にしました`, ""); } catch (e) { this.toast(null, "失敗しました", e.message, true); }
+  },
+  async star(id, btn){
+    const p = S.posts.find(x => x.id === id); if (!p) return;
+    p.starred = !p.starred; btn.classList.toggle("on", p.starred); btn.innerHTML = p.starred ? ICON.starOn : ICON.star;
+    try { await api("/api/star", {id, on: p.starred}); this.poll(); } catch {}
+  },
+
+  /* settings */
+  openSettings(){ this.syncSettings(); $("#settings").showModal(); },
+  syncSettings(){
+    const st = S.state; if (!st) return;
+    const cur = st.scheduler.interval_min, presets = [10, 15, 30, 60, 180, 360, 720, 1440];
+    const label = m => m < 60 ? `${m}分` : m % 60 ? `${Math.floor(m/60)}時間${m%60}分` : `${m/60}時間`;
+    $("#interval-chips").innerHTML = presets.map(m => `<button class="chip ${m === cur ? "on" : ""}" onclick="UI.saveInterval(${m})">${label(m)}</button>`).join("");
+    $("#interval-custom").value = cur;
+    $("#auto-toggle").checked = !st.scheduler.paused;
+    $("#notify-toggle").checked = prefs.notify && ("Notification" in window) && Notification.permission === "granted";
+    $("#autoread-toggle").checked = prefs.autoread;
+    this.applyTheme();
+    $("#manage-list").innerHTML = st.accounts.length ? st.accounts.map(a => `<div class="mrow">${avatar(a.profile?.avatar)}
+      <div class="acct-meta"><div class="acct-name">${esc(a.profile?.name || a.handle)}</div><div class="acct-handle">@${esc(a.handle)} · ${a.total}件保存</div></div>
+      <input type="checkbox" class="tgl" title="定期巡回" ${a.enabled ? "checked" : ""} onchange="UI.toggleAcct('${esc(a.handle)}', this.checked)">
+      <button class="btn icon ghost danger" title="削除" onclick="UI.removeAcct('${esc(a.handle)}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"/></svg></button></div>`).join("")
+      : `<p style="margin:0">アカウントはまだありません。</p>`;
+    this.renderAI();
+    $("#version-note").textContent = `xwatch v${st.version} · データは手元のPCにだけ保存されます`;
+  },
+  aiTab: "claude",
+  renderAI(){
+    const st = S.state; if (!st || !st.mcp) return;
+    const m = st.mcp, args = [m.script, "--mcp", ...(m.default_data ? [] : ["--data", m.data])];
+    const lit = v => v.includes("'") ? JSON.stringify(v) : `'${v}'`;
+    const snippets = {
+      claude: ["claude_desktop_config.json の mcpServers に追加", JSON.stringify({mcpServers: {xwatch: {command: m.python, args}}}, null, 2)],
+      codex: ["~/.codex/config.toml に追記", `[mcp_servers.xwatch]\ncommand = ${lit(m.python)}\nargs = [${args.map(lit).join(", ")}]`],
+      code: ["ターミナルで実行（xwatch 起動中に使えます）", `claude mcp add --transport http xwatch ${location.origin}/mcp`],
+      md: ["ブラウザや AI にそのまま渡せる URL", `${location.origin}/feed.md\n${location.origin}/feed.md?handle=${st.accounts[0]?.handle || "OpenAI"}&hours=48\n${location.origin}/feed.md?q=GPT&hours=0&limit=50\n${location.origin}/accounts.md`],
+    };
+    const [where, code] = snippets[this.aiTab];
+    $("#ai-where").textContent = where; $("#ai-snippet").textContent = code;
+    document.querySelectorAll("#ai-seg button").forEach(b => { b.classList.toggle("on", b.dataset.k === this.aiTab); b.onclick = () => { this.aiTab = b.dataset.k; this.renderAI(); }; });
+  },
+  async copySnippet(){
+    const t = $("#ai-snippet").textContent;
+    try { await navigator.clipboard.writeText(t); }
+    catch { const r = document.createRange(); r.selectNodeContents($("#ai-snippet")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); document.execCommand("copy"); sel.removeAllRanges(); }
+    this.toast(null, "コピーしました", $("#ai-where").textContent);
+  },
+  async saveInterval(m){
+    if (!Number.isFinite(m)) return;
+    try { await api("/api/settings", {interval_min: Math.round(m)}); await this.poll(); this.syncSettings(); this.toast(null, "巡回間隔を変更しました", `${Math.round(m)}分ごとに取得します`); }
+    catch (e) { this.toast(null, "変更できませんでした", e.message, true); }
+  },
+  async setPaused(p){ try { await api("/api/settings", {paused: p}); await this.poll(); this.syncSettings(); } catch (e) { this.toast(null, "失敗しました", e.message, true); } },
+  async setNotify(on){
+    if (on && "Notification" in window) {
+      const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      if (perm !== "granted") { this.toast(null, "通知が許可されませんでした", "ブラウザの設定から許可できます。", true); on = false; }
+    }
+    this.setPref("notify", on);
+  },
+  async toggleAcct(h, on){ try { await api("/api/accounts/toggle", {handle: h, enabled: on}); this.poll(); } catch (e) { this.toast(null, "失敗しました", e.message, true); } },
+  async removeAcct(h){
+    if (!confirm(`@${h} を削除しますか？`)) return;
+    const purge = confirm("保存済みの投稿も削除しますか？\n（キャンセルで投稿は残します）");
+    try { await api("/api/accounts/remove", {handle: h, purge}); if (S.view === h) S.view = null; await this.poll(); this.syncSettings(); this.reload(); }
+    catch (e) { this.toast(null, "削除できませんでした", e.message, true); }
+  },
+
+  /* notifications */
+  announce(ev){
+    const title = `${ev.name} の新着 ${ev.count}件`;
+    this.toast(ev.avatar, title, ev.preview);
+    if (prefs.notify && "Notification" in window && Notification.permission === "granted" && document.hidden) {
+      try { const n = new Notification(title, {body: ev.preview, icon: ev.avatar, tag: "xwatch-" + ev.handle}); n.onclick = () => { window.focus(); this.select(ev.handle); n.close(); }; } catch {}
+    }
+  },
+  toast(av, title, body, bad = false){
+    const el = document.createElement("div");
+    el.className = "toast" + (bad ? " bad" : "");
+    el.innerHTML = `${av ? avatar(av) : ""}<div><b>${esc(title)}</b>${body ? `<small>${esc(body)}</small>` : ""}</div>`;
+    $("#toasts").appendChild(el);
+    setTimeout(() => { el.style.transition = "opacity .3s, transform .3s"; el.style.opacity = 0; el.style.transform = "translateY(6px)"; setTimeout(() => el.remove(), 320); }, bad ? 6000 : 4200);
+  },
+};
+UI.init();
+</script>
+</body>
+</html>
