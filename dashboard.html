@@ -128,8 +128,9 @@ svg{flex:none}
 .ring .fg{stroke:var(--accent);stroke-linecap:round;transition:stroke-dashoffset 1s linear}
 .clock .t{font:600 12.5px/1.15 var(--mono);font-variant-numeric:tabular-nums}
 .clock .l{font-size:10.5px;color:var(--text3);letter-spacing:.04em}
-.clock.running .fg{animation:spin 1.1s linear infinite;transform-origin:50% 50%;stroke-dasharray:20 60}
-@keyframes spin{to{transform:rotate(360deg)}}
+/* 巡回中は輪の弧をその場で回す。残り時間の表示の動き（transition）を止め、回転の中心を円そのものの中心にする */
+.clock.running .fg{animation:spin 1.1s linear infinite;transform-box:fill-box;transform-origin:center;stroke-dasharray:20 60;transition:none}
+@keyframes spin{from{transform:rotate(-90deg)}to{transform:rotate(270deg)}}
 
 /* ── feed ── */
 .feed{max-width:760px;width:100%;margin:0 auto;padding:18px 22px 80px;display:flex;flex-direction:column;gap:14px}

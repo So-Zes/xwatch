@@ -62,3 +62,4 @@ Start-Process (Join-Path $env:WINDIR 'System32\wscript.exe') -ArgumentList ('"' 
 Write-Host ""
 Write-Host "セットアップが終わりました。ダッシュボードの左下にアカウントを入れて追加してください。"
 Write-Host "データはこのフォルダの中の data フォルダに保存されます。フォルダごと動かしたときは、もう一度 setup.bat を実行してください。"
+Write-Host "スマホから見たいときは、このフォルダの phone-setup.bat を実行してください。"
